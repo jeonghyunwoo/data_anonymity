@@ -14,6 +14,8 @@ write_rds(crd,'data/crd.rds')
 # 변수별 최대,최소 확인 
 summary(crd)
 
+
+
 # smbinning에 적합하도록 변수변환 
 # status는 good/bad를 0/1로 변환
 # character변수는 factor로 변환 
@@ -38,6 +40,8 @@ smbinning.sumiv.plot(siv)
 vrs = siv$Char[!is.na(siv$IV)] %>% as.character()
 crd2 = list()
 n = 1
+pct_repo = list() #최소비중 충족못하는 변수 보고서 
+nr = 1
 for(i in vrs){
   cls = class(crd1[[i]])
   if(cls == 'factor'){
@@ -47,10 +51,54 @@ for(i in vrs){
     smb = smbinning(crd1,'status',i)
     res = smbinning.gen(crd1,smb,'newvar')
   }
+  min_pct = filter(smb$ivtable, CntRec >0) %>% pull(PctRec) %>% min()
+  if(min_pct < 0.05){
+    pct_repo[[nr]] = tibble(varn = i, type=cls, minpct = min_pct)
+    nr = nr+1
+  }
   crd2[[n]] = select(res, newvar) %>% set_names(i)
   n = n+1
 }
 crd2 = bind_cols(crd2)
+pct_repo = bind_rows(pct_repo) # job,home,marital
+
+# 구간별 최소비중 미충족건 수동 binning
+mfac = select(crd1,pct_repo$varn,status)
+mbin = function(x){
+  x = enquo(x)
+  group_by(mfac,!!x) %>% 
+    summarise(n=n(),pd=mean(status)) %>% 
+    mutate(pct = n/sum(n)) %>% 
+    arrange(pd)
+}
+mbin(job)
+smb_job = smbinning.factor.custom(mfac,x='job',y='status',
+                                  c("'fixed'",
+                                    "'freelance','others'",
+                                    "'partime'"))
+mbin(home)
+smb_home = smbinning.factor.custom(mfac,x='home',y='status',
+                                   c("'owner'",
+                                     "'parents','priv'",
+                                     "'rent'",
+                                     "'ignore','other'"))
+mbin(marital)
+smb_marital = smbinning.factor.custom(mfac,x='marital',y='status',
+                                      c("'married','widow'",
+                                        "'single'",
+                                        "'divorced','separated'"))
+mfac1 = list()
+mvar = pct_repo$varn
+mlen = length(mvar)
+smblst = list(smb_job,smb_home,smb_marital)
+for(i in 1:mlen){
+  mfac1[[i]] = smbinning.factor.gen(mfac,smblst[[i]],'nvar') %>% 
+    select(nvar) %>% set_names(mvar[i])
+}
+mfac1 = bind_cols(mfac1)
+crd3 = select(crd2,-one_of(mvar)) %>% bind_cols(mfac1)
+
+
 # crd2$status = crd1$status
 # 변수별 factor의 수 
 tibble(vars = vrs) %>% 
@@ -64,9 +112,10 @@ kaf = function(s,m=4,k=3){ # s:난수시드,k:k-익명성
   #m: 테이블 분할개수
   q = len %/% m # 테이블 항목갯수 동일하게 하기위한 변수갯수
   r = len %% m # 동일변수갯수로 분할 후 나머지 변수갯수 
+  m1 = ifelse(r==0,m,m+1)
   
   set.seed(s)
-  grp = sample(1:m,size=len,prob=rep(q,m)/len,replace=T)
+  grp = sample(1:m1,size=len,prob=c(rep(q,m),r)/len,replace=T)
   tbls = character() #분리된 테이블의 항목명 
   kanon = logical() #k익명성 달성여부 
   # 분리테이블별 feature 생성 
@@ -102,15 +151,20 @@ tic()
 ktry_1000 = future_map_dfr(1:1000,~kaf(s=.x,m=3,k=3))
 toc()
 # 1개의 난수에 m개의 분할 테이블 나옴 
+# k=3를 달성하는 셋 
+ktry_1000 %>% 
+  group_by(s) %>% 
+  filter(n()==sum(k))
+# 모두 k=3 달성하는 셋은 하나도 없음 
 
-# k=3를 달성하는 그룹 
+# 시도횟수내 k=3를 달성하는 그룹들 
 kgrp = ktry_1000 %>% 
   filter(k) %>% 
   distinct(seniority,income,records,job,home,
            assets,prc_ovr_asst,debt_ovr_asst,
            exp_ovr_inc,amount,prc_ovr_inc,time,marital,age,.keep_all = T)
-dim(ktry_1000) #2991 22
-dim(kgrp) #224 22
+dim(ktry_1000) #3842 22
+dim(kgrp) #262 22
 
 # 중복변수 최소화하며 모든 변수 포함하는 조합찾기 
 sgrp = group_by(kgrp,s) %>% 
@@ -123,7 +177,9 @@ cor_s = gather(sgrp,key,value,-s) %>%
   correlate() %>% 
   shave() %>% 
   stretch(na.rm=T)
-# 42230개의 조합 
+# 24753개의 조합 
+
+# noshow 정보 추가 
 tic()
 cor_s1 = cor_s %>% 
   mutate_at(vars(x,y),as.integer) %>% 
@@ -131,32 +187,22 @@ cor_s1 = cor_s %>%
     mid = filter(sgrp,s %in% c(x,y)) %>% select(-s)
     covn = sum(colSums(mid) >0) # 테이블에 포함된 변수갯수
     dupn = sum(colSums(mid) >1,na.rm=T) # 중복항목갯수
-    res = str_c(covn,dupn,sep=',')
+    noshow = str_c(names(mid)[colSums(mid)==0],collapse=',')
+    res = str_c(covn,dupn,noshow,sep='/')
     return(res)
   })) %>% 
-  separate(feat,c('cover_n','dup_n')) %>% 
+  separate(feat,c('cover_n','dup_n','noshow'),sep='/') %>% 
   mutate_at(vars(cover_n,dup_n),as.numeric)
 toc()
-# 97.65 sec
-dim(cor_s1)
+# 111.69 sec elapsed
+
 cor_s1 %>% 
-  arrange(desc(cover_n))
-# 총변수의 수 : 14
-len
-# 최대 커버변수의 수 : 11
-library(ggthemes)
-windowsFonts(ng = windowsFont('나눔고딕'))
-theme_set(theme_tufte(10,'ng'))
-ggplot(cor_s1,aes(cover_n,dup_n,fill=r))+
-  geom_tile(color='white')+
-  scale_x_continuous(expand = expand_scale(mult=0),
-                     breaks = 0:11)+
-  scale_y_continuous(expand = expand_scale(mult=0))+
-  scale_fill_gradient2_tableau()
+  arrange(desc(cover_n),dup_n) # 최대 12개 변수 커버 
+
 
 # 80 167 cover=11, dup=2
 # 80 466 cover=10, dup=0 외 6개 조합 
-g1 = kaf(80) %>% filter(k)
-g2 = kaf(466) %>% filter(k)
+g1 = kaf(7) %>% filter(k)
+g2 = kaf(94) %>% filter(k)
 select(g1,varn)
 select(g2,varn)
