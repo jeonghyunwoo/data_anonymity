@@ -169,7 +169,7 @@ kaf = function(s,m=3,k=3){ # s:난수시드,k:k-익명성
     tbl = crd3[,grp==i,drop=F]
     tbls[j] = str_c(names(tbl),collapse=',')
     k_min[j] = group_by_all(tbl) %>% count() %>% pull(n) %>% min()
-    kanon[j]= k_min >=k
+    kanon[j]= k_min[j] >=k
     pca_mat = summary(prcomp(model.matrix(~.,tbl)))$importance
     tot_var[j] = sum(pca_mat[1,]**2)
     varnum[j] = ncol(tbl)
