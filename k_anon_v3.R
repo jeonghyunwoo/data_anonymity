@@ -156,6 +156,7 @@ kaf = function(s,m=3,k=3){ # s:난수시드,k:k-익명성
   set.seed(s)
   grp = sample(1:m,size=len,prob=c(rep(q,m-1),q+r)/len,replace=T)
   tbls = character() #분리된 테이블의 항목명 
+  k_min = integer() #k익명성 값 
   kanon = logical() #k익명성 달성여부 
   # 분리테이블별 feature 생성 (참고항목들)
   tot_var = numeric() #분리테이블 총분산
@@ -167,7 +168,7 @@ kaf = function(s,m=3,k=3){ # s:난수시드,k:k-익명성
   for(i in unique(grp)){ #grp: 변수그룹 (111222333...)
     tbl = crd3[,grp==i,drop=F]
     tbls[j] = str_c(names(tbl),collapse=',')
-    k_min = group_by_all(tbl) %>% count() %>% pull(n) %>% min()
+    k_min[j] = group_by_all(tbl) %>% count() %>% pull(n) %>% min()
     kanon[j]= k_min >=k
     pca_mat = summary(prcomp(model.matrix(~.,tbl)))$importance
     tot_var[j] = sum(pca_mat[1,]**2)
