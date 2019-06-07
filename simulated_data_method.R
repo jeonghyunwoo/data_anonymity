@@ -16,11 +16,13 @@ tr_dm = juice(rec)
 te_dm = bake(rec, te)
 
 # 통계속성을 만들어낸다 :평균,표준편차,상관계수,변수별 QUANTILE 정보 
+# 변수별 퀀타일 정보는 하단의 cut_bin임 
 mu = colMeans(tr_dm)
 std = sapply(tr_dm,sd)
 corr_mat = cor(tr_dm)
 cov_mat = std %*% t(std)*corr_mat
 # 가상의 유사한 데이터를 만든다
+set.seed(1)
 tr_sim = mvrnorm(n = nrow(tr_dm), mu=mu, Sigma=cov_mat, empirical =TRUE) %>% data.frame
 # 평균,표준편차,상관계수는 똑같지만 개별 변수의 분포는 상이하다 (정규분포화됨)
 
