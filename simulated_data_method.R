@@ -54,5 +54,5 @@ pred1 = predict(fit1,te,type='prob')[['bad']]
 pred2 = predict(fit2,te,type='prob')[['bad']]
 
 tst = data.frame(pred1 = pred1, pred2 = pred2, class = te_dm$status)
-smbinning.metrics(tst,'pred1','class') # KS: 0.41, AUC: 0.76
-smbinning.metrics(tst,'pred2','class') # KS: 0.33, AUC: 0.73
+smbinning.metrics(tst,'pred1','class') # KS: 0.496, AUC: 0.822
+smbinning.metrics(tst,'pred2','class') # KS: 0.457, AUC: 0.802
